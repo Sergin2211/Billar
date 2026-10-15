@@ -190,7 +190,7 @@ export class RoguelikeManager {
     this.score = 0;
     this.totalCareerScore = 0;
     this.tablesCleared = 0;
-    this.shotsRemaining = 5;
+    this._shotsRemaining = 5;
 
     // Relics owned (Set of IDs)
     this.relics = new Set();
@@ -201,6 +201,14 @@ export class RoguelikeManager {
 
     // Current table config
     this.currentTable = TABLE_CONFIGS[0];
+  }
+
+  get shotsRemaining() {
+    return Math.max(0, this._shotsRemaining || 0);
+  }
+
+  set shotsRemaining(val) {
+    this._shotsRemaining = Math.max(0, val || 0);
   }
 
   reset() {
@@ -273,7 +281,8 @@ export class RoguelikeManager {
    */
   calculateRoundClearReward() {
     const baseWin = 5;
-    const shotsBonus = this.shotsRemaining * 1;
+    const safeShots = Math.max(0, this.shotsRemaining);
+    const shotsBonus = safeShots * 1;
     // Interest: $1 per $5 saved (max $5)
     const interest = Math.min(5, Math.floor(this.money / 5));
     const totalEarned = baseWin + shotsBonus + interest;

@@ -21,8 +21,37 @@ export class GameStateManager {
     this.previousState = null;
     this.stateTime = 0;
 
+    // Track shots and score on state manager with strict non-negative clamping
+    this._shots = 0;
+    this._score = 0;
+    this._targetScore = 0;
+
     // Active shot statistics for Balatro scoring
     this.turnStats = this.createEmptyTurnStats();
+  }
+
+  get shots() {
+    return Math.max(0, this._shots || 0);
+  }
+
+  set shots(val) {
+    this._shots = Math.max(0, val || 0);
+  }
+
+  get score() {
+    return Math.max(0, this._score || 0);
+  }
+
+  set score(val) {
+    this._score = Math.max(0, val || 0);
+  }
+
+  get targetScore() {
+    return Math.max(0, this._targetScore || 0);
+  }
+
+  set targetScore(val) {
+    this._targetScore = Math.max(0, val || 0);
   }
 
   createEmptyTurnStats() {

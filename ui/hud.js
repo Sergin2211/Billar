@@ -267,7 +267,8 @@ export class HUDManager {
     this.dom.scoreProgressBar.style.width = `${progress}%`;
 
     this.dom.moneyDisplay.textContent = `$${roguelike.money}`;
-    this.dom.shotsDisplay.textContent = `${roguelike.shotsRemaining} Tiros`;
+    const safeShots = Math.max(0, roguelike.shotsRemaining);
+    this.dom.shotsDisplay.textContent = `${safeShots} Tiros`;
   }
 
   updateBalatroScore(basePoints, multiplier, isBump = false) {
@@ -457,7 +458,7 @@ export class HUDManager {
 
   showRoundClear(reward, finalScore, shotsLeft) {
     this.dom.summaryScore.textContent = finalScore.toLocaleString();
-    this.dom.summaryShotsLeft.textContent = shotsLeft;
+    this.dom.summaryShotsLeft.textContent = Math.max(0, shotsLeft);
     this.dom.summaryShotsBonus.textContent = `+$${reward.shotsBonus}`;
     this.dom.summaryInterestBonus.textContent = `+$${reward.interest}`;
     this.dom.summaryTotalCash.textContent = `+$${reward.totalEarned}`;

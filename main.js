@@ -110,10 +110,18 @@ class Game {
     ];
   }
 
-  setupTable() {
+  setupTable(preserveCueBall = false) {
+    const rackStartX = this.bounds.minX + (this.bounds.maxX - this.bounds.minX) * 0.72;
+    const oldCueBall = (preserveCueBall && this.cueBall && this.cueBall.inPlay && !this.state.turnStats.scratch) ? this.cueBall : null;
+
     this.balls = [];
     this.obstacles = [];
     this.physics.firstCollisionOccurred = false;
+
+    // Synchronize state manager properties
+    this.state.shots = this.roguelike.shotsRemaining;
+    this.state.score = this.roguelike.score;
+    this.state.targetScore = this.roguelike.currentTable.targetScore;
 
     const currentTable = this.roguelike.currentTable;
 
@@ -133,16 +141,22 @@ class Game {
       this.obstacles.push(new Obstacle(centerX - 16, centerY + 45, 32, 50, 'pillar'));
     }
 
-    // Spawn Cue Ball at head string (1/4 table width)
+    // Spawn Cue Ball at head string (1/4 table width) or preserve if safely placed away from rack
     const cueBallX = this.bounds.minX + (this.bounds.maxX - this.bounds.minX) * 0.28;
     const cueBallY = (this.bounds.minY + this.bounds.maxY) / 2;
-    this.cueBall = new Ball('cue', 0, 'cue', cueBallX, cueBallY, 13.5);
+
+    if (oldCueBall && oldCueBall.x < rackStartX - 40) {
+      this.cueBall = oldCueBall;
+      this.cueBall.vx = 0;
+      this.cueBall.vy = 0;
+    } else {
+      this.cueBall = new Ball('cue', 0, 'cue', cueBallX, cueBallY, 13.5);
+    }
     this.cueBall.spinX = this.hud.spinX;
     this.cueBall.spinY = this.hud.spinY;
     this.balls.push(this.cueBall);
 
     // Build standard triangle rack of balls + include bought special balls
-    const rackStartX = this.bounds.minX + (this.bounds.maxX - this.bounds.minX) * 0.72;
     const rackStartY = (this.bounds.minY + this.bounds.maxY) / 2;
     const r = 13.5;
     const rowOffset = r * Math.sqrt(3) + 1.2;
@@ -211,6 +225,11 @@ class Game {
 
       // BALL IN HAND placement
       if (this.state.isState(GameStates.BALL_IN_HAND)) {
+        if (this.roguelike.shotsRemaining <= 0 || this.state.shots <= 0) {
+          this.state.changeState(GameStates.GAME_OVER);
+          this.hud.showGameOver(this.roguelike.totalCareerScore, this.roguelike.tablesCleared);
+          return;
+        }
         if (this.canPlaceCueBall(pos.x, pos.y)) {
           this.cueBall.x = pos.x;
           this.cueBall.y = pos.y;
@@ -218,6 +237,7 @@ class Game {
           this.cueBall.vy = 0;
           this.cueBall.inPlay = true;
           this.cueBall.isSinking = false;
+          this.cueBall.pocketed = false;
           this.cueBall.sinkProgress = 0;
           this.cueBall.sinkScale = 1.0;
           this.cueBall.sinkAlpha = 1.0;
@@ -230,8 +250,14 @@ class Game {
         return;
       }
 
-      // AIMING / CHARGING
+      // AIMING / CHARGING: El jugador solo puede cargar el taco y disparar si state.shots > 0
       if (this.state.isState(GameStates.AIMING) && this.cueBall && this.cueBall.inPlay) {
+        if (this.roguelike.shotsRemaining <= 0 || this.state.shots <= 0) {
+          this.cue.isCharging = false;
+          this.cue.power = 0;
+          return;
+        }
+
         this.aimAngle = Math.atan2(pos.y - this.cueBall.y, pos.x - this.cueBall.x);
         this.cue.aimAngle = this.aimAngle;
         this.cue.isCharging = true;
@@ -254,6 +280,12 @@ class Game {
       }
 
       if (this.state.isState(GameStates.AIMING) && this.cueBall) {
+        if (this.roguelike.shotsRemaining <= 0 || this.state.shots <= 0) {
+          this.cue.isCharging = false;
+          this.cue.power = 0;
+          return;
+        }
+
         if (!this.cue.isCharging) {
           // Normal aiming: direction from cueBall towards cursor
           this.aimAngle = Math.atan2(pos.y - this.cueBall.y, pos.x - this.cueBall.x);
@@ -280,7 +312,7 @@ class Game {
         this.cue.isCharging = false;
         this.hud.setPowerGauge(0);
 
-        if (this.cue.power > 0.04) {
+        if (this.roguelike.shotsRemaining > 0 && this.state.shots > 0 && this.cue.power > 0.04) {
           this.executeShot();
         } else {
           this.cue.power = 0;
@@ -308,6 +340,14 @@ class Game {
   }
 
   executeShot() {
+    // 1. Bloqueo al apuntar/disparar: solo se puede disparar si state.shots > 0
+    if (this.roguelike.shotsRemaining <= 0 || this.state.shots <= 0) {
+      this.state.changeState(GameStates.GAME_OVER);
+      audio.playGameOver();
+      this.hud.showGameOver(this.roguelike.totalCareerScore, this.roguelike.tablesCleared);
+      return;
+    }
+
     // Check Boss "El Usurero" tax: Each shot costs $1
     if (this.roguelike.currentTable.boss === 'usurero') {
       if (this.roguelike.money > 0) {
@@ -349,11 +389,12 @@ class Game {
     particles.createCueStrikeDust(this.cueBall.x, this.cueBall.y, shotAngle, effectivePowerRatio);
     particles.shake(effectivePowerRatio * 8, 0.25);
 
-    // Consume 1 shot
-    this.roguelike.shotsRemaining--;
+    // 2. Al golpear la bola blanca: Se resta exactamente 1 tiro con tope mínimo en 0
+    this.roguelike.shotsRemaining = Math.max(0, this.roguelike.shotsRemaining - 1);
+    this.state.shots = this.roguelike.shotsRemaining;
     this.hud.updateHeader(this.roguelike);
 
-    // Transition to simulation state
+    // Transición al estado de simulación física
     this.state.changeState(GameStates.BALLS_MOVING);
     this.cue.power = 0;
     this.holdPower = 0;
@@ -367,6 +408,7 @@ class Game {
         // Deadly trap pocket from Boss "El Abismo"
         particles.addText('¡TRAMPA DEL ABISMO! -1 TIRO', pocket.x, pocket.y - 25, '#ef4444', 18, true);
         this.roguelike.shotsRemaining = Math.max(0, this.roguelike.shotsRemaining - 1);
+        this.state.shots = this.roguelike.shotsRemaining;
         this.hud.updateHeader(this.roguelike);
         this.hud.logCombo('☠ ¡Bola tragada por el Abismo! Pierdes 1 tiro', 'danger');
         return;
@@ -374,9 +416,14 @@ class Game {
 
       if (ball.type === 'cue') {
         turnStats.scratch = true;
-        particles.addText('¡SCRATCH!', pocket.x, pocket.y - 20, '#ef4444', 20, true);
+        // 3. Penalizaciones durante el tiro (BALLS_MOVING): Scratch descuenta 1 tiro con tope mínimo en 0
+        // pero NO evalúa Game Over todavía; se espera a que todas las bolas de la mesa se detengan por completo
+        this.roguelike.shotsRemaining = Math.max(0, this.roguelike.shotsRemaining - 1);
+        this.state.shots = this.roguelike.shotsRemaining;
+        this.hud.updateHeader(this.roguelike);
+        particles.addText('¡SCRATCH! -1 TIRO', pocket.x, pocket.y - 20, '#ef4444', 20, true);
         audio.playScratch();
-        this.hud.logCombo('✖ ¡Scratch! La bola blanca cayó en la tronera', 'danger');
+        this.hud.logCombo('✖ ¡Scratch! Pierdes 1 tiro de penalización', 'danger');
         return;
       }
 
@@ -495,25 +542,8 @@ class Game {
   evaluateShotEnd() {
     const stats = this.state.turnStats;
 
-    // Scratch Penalty
-    if (stats.scratch) {
-      stats.basePoints = 0;
-      stats.multiplier = 1;
-      this.cueBall.inPlay = true;
-      this.cueBall.isSinking = false;
-      this.cueBall.pocketed = false;
-      this.cueBall.sinkProgress = 0;
-      this.cueBall.sinkScale = 1.0;
-      this.cueBall.sinkAlpha = 0.85;
-      this.cueBall.vx = 0;
-      this.cueBall.vy = 0;
-      this.hud.updateBalatroScore(0, 1);
-      this.hud.showBanner('¡SCRATCH! PIERDES 1 TIRO Y BOLA EN MANO', 3000);
-      this.state.changeState(GameStates.BALL_IN_HAND);
-      return;
-    }
-
-    // Pocketed Balls Combo
+    // 1. PRIMERO: Suma al score total de la mesa el puntaje obtenido en el tiro (Puntos Base x Multiplicador)
+    let totalShotScore = 0;
     if (stats.ballsPocketed.length > 0) {
       // Combo multiplier bonus for pocketing multiple balls in one shot
       if (stats.ballsPocketed.length > 1) {
@@ -522,27 +552,33 @@ class Game {
       }
 
       // Relic: Último Aliento (On last available shot, Mult is x3)
-      if (this.roguelike.shotsRemaining === 0 && this.roguelike.hasRelic('last_breath')) {
+      if (this.roguelike.shotsRemaining <= 0 && this.roguelike.hasRelic('last_breath')) {
         stats.multiplier *= 3;
-        particles.addText('¡ÚLTIMO ALIENTO! x3 MULT', this.bounds.maxX / 2, this.bounds.maxY / 2, '#ffd700', 24, true);
+        particles.addText('¡ÚLTIMO ALIENTO! x3 MULT', (this.bounds.minX + this.bounds.maxX) / 2, (this.bounds.minY + this.bounds.maxY) / 2, '#ffd700', 24, true);
         this.hud.logCombo('💀 ¡Último Aliento! Multiplicador x3', 'bonus');
       }
 
-      const totalShotScore = stats.basePoints * stats.multiplier;
+      totalShotScore = stats.basePoints * stats.multiplier;
       this.roguelike.score += totalShotScore;
       this.roguelike.totalCareerScore += totalShotScore;
+      this.state.score = this.roguelike.score;
 
       audio.playScoreTally(8);
       particles.addText(`+${totalShotScore.toLocaleString()} PTS!`, (this.bounds.minX + this.bounds.maxX) / 2, 80, '#ffd700', 28, true);
     } else {
-      this.hud.logCombo('Sin bolas embocadas este tiro.', 'normal');
+      if (!stats.scratch) {
+        this.hud.logCombo('Sin bolas embocadas este tiro.', 'normal');
+      }
     }
 
+    this.hud.updateBalatroScore(stats.basePoints, stats.multiplier);
     this.hud.updateHeader(this.roguelike);
     this.hud.updateBallsList(this.balls);
 
-    // Check Win / Table Clear condition
-    if (this.roguelike.score >= this.roguelike.currentTable.targetScore) {
+    // 2. SEGUNDO: Comprobar si se alcanzó o superó la meta (state.score >= state.targetScore)
+    // Transiciona inmediatamente al estado de victoria de mesa (ROUND_OVER / SHOP),
+    // sin importar si state.shots llegó a 0 en ese último tiro.
+    if (this.roguelike.score >= this.roguelike.currentTable.targetScore || this.state.score >= this.state.targetScore) {
       this.roguelike.tablesCleared++;
       const reward = this.roguelike.calculateRoundClearReward();
       this.roguelike.money += reward.totalEarned;
@@ -550,31 +586,49 @@ class Game {
       this.state.changeState(GameStates.ROUND_OVER);
       audio.playWin();
 
-      // Check if Act 3 Boss cleared
+      // Check if Act 3 Boss cleared (Victoria Definitiva)
       if (this.roguelike.tableIndex === TABLE_CONFIGS.length - 1) {
         this.hud.showVictory(this.roguelike.totalCareerScore, this.roguelike.money);
       } else {
-        this.hud.showRoundClear(reward, this.roguelike.score, this.roguelike.shotsRemaining);
+        this.hud.showRoundClear(reward, this.roguelike.score, Math.max(0, this.roguelike.shotsRemaining));
       }
       return;
     }
 
-    // Check Defeat / Out of Shots
-    if (this.roguelike.shotsRemaining <= 0) {
+    // 3. TERCERO: Si todas las bolas objetivo de la mesa se agotaron pero aún no se alcanza targetScore,
+    // re-genera un nuevo triángulo (rack) de bolas en la mesa para que el jugador pueda seguir puntuando.
+    const activeBalls = this.balls.filter(b => b.inPlay && b.type !== 'cue');
+    if (activeBalls.length === 0) {
+      this.setupTable(true);
+      this.hud.showBanner('¡MESA DESPEJADA! NUEVO RACK DE BOLAS', 2500);
+      audio.playCushionHit(800);
+    }
+
+    // 4. CUARTO: Si state.score < state.targetScore y state.shots <= 0 (usa siempre <= 0, nunca === 0):
+    // Transiciona inmediatamente al estado GAME_OVER.
+    if (this.roguelike.shotsRemaining <= 0 || this.state.shots <= 0) {
       this.state.changeState(GameStates.GAME_OVER);
       audio.playGameOver();
       this.hud.showGameOver(this.roguelike.totalCareerScore, this.roguelike.tablesCleared);
       return;
     }
 
-    // Check if table is out of target balls (re-rack if necessary)
-    const activeBalls = this.balls.filter(b => b.inPlay && b.type !== 'cue');
-    if (activeBalls.length === 0) {
-      this.setupTable();
-      this.hud.showBanner('¡NUEVO RACK EN LA MESA!', 2000);
+    // 5. QUINTO: Si la partida continúa (shots > 0) y hubo Scratch, transiciona a BALL_IN_HAND
+    if (stats.scratch) {
+      this.cueBall.inPlay = true;
+      this.cueBall.isSinking = false;
+      this.cueBall.pocketed = false;
+      this.cueBall.sinkProgress = 0;
+      this.cueBall.sinkScale = 1.0;
+      this.cueBall.sinkAlpha = 0.85;
+      this.cueBall.vx = 0;
+      this.cueBall.vy = 0;
+      this.hud.showBanner('¡SCRATCH! PIERDES 1 TIRO - BOLA EN MANO', 3000);
+      this.state.changeState(GameStates.BALL_IN_HAND);
+      return;
     }
 
-    // Return to AIMING
+    // Si no hubo scratch, regresar al estado AIMING
     this.state.changeState(GameStates.AIMING);
   }
 
@@ -599,7 +653,7 @@ class Game {
     particles.update(dt);
 
     // Charge power smoothly if holding click (1.65 seconds to reach 100%)
-    if (this.state.isState(GameStates.AIMING) && this.cue.isCharging) {
+    if (this.state.isState(GameStates.AIMING) && this.cue.isCharging && this.roguelike.shotsRemaining > 0) {
       this.holdPower = Math.min(1.0, this.holdPower + rawDt / 1.65);
       this.cue.power = Math.min(1.0, Math.max(this.dragPower, this.holdPower));
       this.hud.setPowerGauge(this.cue.power);
@@ -678,7 +732,7 @@ class Game {
     }
 
     // 7. Draw Cue Stick
-    if (this.state.isState(GameStates.AIMING) && this.cueBall && this.cueBall.inPlay) {
+    if (this.state.isState(GameStates.AIMING) && this.cueBall && this.cueBall.inPlay && this.roguelike.shotsRemaining > 0) {
       this.cue.isAiming = true;
       this.cue.draw(ctx, this.cueBall.x, this.cueBall.y, this.cueBall.radius, this.aimAngle, this.cue.power);
     } else {
