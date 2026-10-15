@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CueRogue: Balatro Pool Roguelike</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="game-container">
+    <!-- Top Bar: Run Status & Boss Alert -->
+    <header id="top-bar">
+      <div class="header-left">
+        <div class="logo-badge">
+          <span class="logo-icon">🎱</span>
+          <span class="logo-text">CUEROGUE</span>
+        </div>
+        <div class="run-info">
+          <span id="act-display" class="badge badge-act">ACTO 1</span>
+          <span id="table-display" class="badge badge-table">MESA 1/4</span>
+          <span id="boss-badge" class="badge badge-boss hidden">JEFE: EL ARQUITECTO</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <!-- Target Score Progress -->
+        <div class="score-progress-container">
+          <div class="score-labels">
+            <span class="score-target-label">META DE PUNTOS: <strong id="target-score-val">150</strong></span>
+            <span class="score-current-label">ACTUAL: <strong id="current-score-val">0</strong></span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="score-progress-bar" class="progress-bar-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="stat-pill money-pill">
+          <span class="stat-icon">💵</span>
+          <span id="money-display" class="stat-val">$10</span>
+        </div>
+        <div class="stat-pill shots-pill">
+          <span class="stat-icon">🎯</span>
+          <span id="shots-display" class="stat-val">5 Tiros</span>
+        </div>
+        <button id="audio-toggle-btn" class="icon-btn" title="Silenciar / Activar Sonido">🔊</button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main id="main-stage">
+      <!-- Left Panel: Balatro Scoring & Relics -->
+      <aside id="left-sidebar" class="hud-sidebar">
+        <!-- Balatro Score Box -->
+        <div class="card balatro-score-card">
+          <div class="card-title">CÁLCULO DEL TIRO</div>
+          <div class="balatro-calc-display">
+            <div class="calc-box points-box">
+              <span class="calc-label">PUNTOS</span>
+              <span id="shot-points-val" class="calc-value">0</span>
+            </div>
+            <span class="calc-op">×</span>
+            <div class="calc-box mult-box">
+              <span class="calc-label">MULT</span>
+              <span id="shot-mult-val" class="calc-value">1</span>
+            </div>
+          </div>
+          <div class="shot-total-row">
+            <span>TOTAL TIRO:</span>
+            <strong id="shot-total-val">0</strong>
+          </div>
+          <div id="combo-log" class="combo-ticker-box">
+            <div class="combo-item highlight">¡Apunta y dispara a las bolas!</div>
+          </div>
+        </div>
+
+        <!-- Relics Inventory -->
+        <div class="card relics-card">
+          <div class="card-title">
+            <span>RELIQUIAS ACTIVAS</span>
+            <span id="relics-count" class="count-pill">0/5</span>
+          </div>
+          <div id="relics-list" class="relics-slot-container">
+            <div class="relic-slot empty"><span>+</span></div>
+            <div class="relic-slot empty"><span>+</span></div>
+            <div class="relic-slot empty"><span>+</span></div>
+            <div class="relic-slot empty"><span>+</span></div>
+            <div class="relic-slot empty"><span>+</span></div>
+          </div>
+        </div>
+
+        <!-- Cue Ball Spin / English Control -->
+        <div class="card spin-card">
+          <div class="card-title">
+            <span>EFECTO DE BOLA (SPIN)</span>
+            <button id="reset-spin-btn" class="text-btn">Centro</button>
+          </div>
+          <div class="spin-control-wrapper">
+            <div id="spin-canvas-container">
+              <canvas id="spin-canvas" width="90" height="90"></canvas>
+            </div>
+            <div class="spin-legend">
+              <div id="spin-label-vertical">Arriba: Top Spin / Abajo: Back Spin</div>
+              <div id="spin-label-horizontal">Lados: English</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center: Billiard Canvas -->
+      <section id="canvas-wrapper">
+        <canvas id="pool-canvas"></canvas>
+
+        <!-- Notification Banner / Floating Instructions -->
+        <div id="table-alert-banner" class="table-banner hidden">
+          <span id="table-alert-text">¡COLOCA LA BOLA BLANCA!</span>
+        </div>
+
+        <!-- Power Meter Overlay (Optional Visual) -->
+        <div id="power-gauge-overlay" class="power-gauge hidden">
+          <div class="power-label">POTENCIA</div>
+          <div class="power-track">
+            <div id="power-bar-fill" class="power-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Deck & Table Balls Info -->
+      <aside id="right-sidebar" class="hud-sidebar">
+        <!-- Table Balls Overview -->
+        <div class="card deck-card">
+          <div class="card-title">
+            <span>BOLAS EN MESA</span>
+            <span id="balls-count" class="count-pill">0</span>
+          </div>
+          <div id="balls-inventory-list" class="balls-grid"></div>
+        </div>
+
+        <!-- Tips & Synergies quick guide -->
+        <div class="card guide-card">
+          <div class="card-title">REGLAS ROGUELIKE</div>
+          <ul class="mini-guide-list">
+            <li><span class="guide-bullet">✦</span> <strong>Choques con banda:</strong> suman +1 al Multiplicador.</li>
+            <li><span class="guide-bullet">✦</span> <strong>Carambolas:</strong> aumentan el combo del tiro.</li>
+            <li><span class="guide-bullet">✦</span> <strong>Embocar bolas:</strong> suman puntos base y activan sinergias.</li>
+            <li><span class="guide-bullet">✦</span> <strong>Scratch:</strong> -1 Tiro y bola en mano.</li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Modals & Overlays -->
+    <!-- 1. Start / Main Menu Modal -->
+    <div id="menu-modal" class="modal-overlay">
+      <div class="modal-card menu-card">
+        <div class="modal-header">
+          <div class="glow-title">CUEROGUE</div>
+          <p class="subtitle">BILLAR ROGUELIKE CASINO NOIR</p>
+        </div>
+        <div class="modal-body">
+          <p class="flavor-text">
+            Bienvenido al club clandestino. 3 Actos, 12 mesas y jefes implacables.
+            Construye sinergias disparatadas combinando <strong>Reliquias arcanas</strong> y <strong>Bolas especiales</strong> para superar la meta de puntos antes de agotar tus tiros.
+          </p>
+          <div class="mechanics-preview">
+            <div class="preview-item">
+              <span class="preview-icon">🎱</span>
+              <div>
+                <strong>Física Realista</strong>
+                <span>Colisiones elásticas, top/back spin y raycasting.</span>
+              </div>
+            </div>
+            <div class="preview-item">
+              <span class="preview-icon">🃏</span>
+              <div>
+                <strong>Puntuación Balatro</strong>
+                <span>(Puntos Base) × (Multiplicador de combos y bandas).</span>
+              </div>
+            </div>
+            <div class="preview-item">
+              <span class="preview-icon">🔮</span>
+              <div>
+                <strong>Jefes & Trampas</strong>
+                <span>Pares de pilares, troneras rojas y tiros arancelados.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="start-game-btn" class="btn btn-primary btn-large">¡INICIAR PARTIDA!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Shop Modal -->
+    <div id="shop-modal" class="modal-overlay hidden">
+      <div class="modal-card shop-card">
+        <div class="shop-header">
+          <div>
+            <span class="badge badge-shop">TIENDA CLANDESTINA</span>
+            <h2 class="shop-title">MEJORAS & RELIQUIAS</h2>
+          </div>
+          <div class="shop-bank-pill">
+            <span>BANCO:</span>
+            <strong id="shop-money-display">$15</strong>
+          </div>
+        </div>
+
+        <div class="shop-sections-grid">
+          <!-- Relics section -->
+          <div class="shop-col">
+            <h3 class="col-title">RELIQUIAS DISPONIBLES</h3>
+            <div id="shop-relics-list" class="shop-items-grid"></div>
+          </div>
+
+          <!-- Special Balls section -->
+          <div class="shop-col">
+            <h3 class="col-title">BOLAS ESPECIALES</h3>
+            <div id="shop-balls-list" class="shop-items-grid"></div>
+          </div>
+        </div>
+
+        <div class="shop-footer">
+          <button id="shop-reroll-btn" class="btn btn-secondary">
+            <span>🎲 Reroll</span>
+            <span class="cost-tag">$2</span>
+          </button>
+          <button id="shop-continue-btn" class="btn btn-primary btn-next-table">
+            <span>Siguiente Mesa ➔</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Round Cleared Overlay -->
+    <div id="round-clear-modal" class="modal-overlay hidden">
+      <div class="modal-card victory-small-card">
+        <div class="round-cleared-glow">¡MESA SUPERADA!</div>
+        <div id="round-summary-content" class="round-summary-grid">
+          <div class="summary-row">
+            <span>Puntaje Alcanzado:</span>
+            <strong id="summary-score" class="highlight-cyan">0</strong>
+          </div>
+          <div class="summary-row">
+            <span>Tiros Sobrantes:</span>
+            <strong id="summary-shots-left" class="highlight-gold">0</strong>
+          </div>
+          <div class="summary-breakdown">
+            <div>Base por victoria: <span>+$5</span></div>
+            <div>Bono por tiros sobrantes: <span id="summary-shots-bonus">+$0</span></div>
+            <div>Interés bancario: <span id="summary-interest-bonus">+$0</span></div>
+          </div>
+          <div class="summary-total-earn">
+            <span>TOTAL GANADO:</span>
+            <strong id="summary-total-cash">+$5</strong>
+          </div>
+        </div>
+        <button id="go-to-shop-btn" class="btn btn-primary btn-large">Ir a la Tienda ➔</button>
+      </div>
+    </div>
+
+    <!-- 4. Game Over Modal -->
+    <div id="game-over-modal" class="modal-overlay hidden">
+      <div class="modal-card defeat-card">
+        <div class="defeat-glow">FIN DE LA PARTIDA</div>
+        <p class="defeat-sub">Te has quedado sin tiros en el paño.</p>
+        <div class="defeat-stats">
+          <div class="stat-box">
+            <span>Puntaje Final</span>
+            <strong id="defeat-final-score">0</strong>
+          </div>
+          <div class="stat-box">
+            <span>Mesas Superadas</span>
+            <strong id="defeat-tables-cleared">0</strong>
+          </div>
+        </div>
+        <button id="restart-game-btn" class="btn btn-primary btn-large">Reintentar</button>
+      </div>
+    </div>
+
+    <!-- 5. Grand Victory Modal (Act 3 Boss Defeated) -->
+    <div id="victory-modal" class="modal-overlay hidden">
+      <div class="modal-card victory-grand-card">
+        <div class="victory-crown">👑</div>
+        <div class="victory-glow">¡CAMPEÓN DEL TAPETE!</div>
+        <p class="victory-sub">Has derrotado al Abismo y dominado el casino clandestino.</p>
+        <div class="victory-stats">
+          <div class="stat-box">
+            <span>Puntaje Total Acumulado</span>
+            <strong id="victory-final-score" class="highlight-gold">0</strong>
+          </div>
+          <div class="stat-box">
+            <span>Dinero Acumulado</span>
+            <strong id="victory-final-cash" class="highlight-cyan">$0</strong>
+          </div>
+        </div>
+        <button id="victory-restart-btn" class="btn btn-primary btn-large">Nueva Partida Roguelike</button>
+      </div>
+    </div>
+
+    <!-- Floating Tooltip Element -->
+    <div id="global-tooltip" class="floating-tooltip hidden"></div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
